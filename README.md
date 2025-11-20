@@ -23,13 +23,13 @@ cd GW_SIMU
 ### 2. Thiết lập Virtual Environment
 ```bash
 # Tạo virtual environment
-python3 -m venv venv
+python3 -m venv venvv
 
 # Kích hoạt venv
-source venv/bin/activate
+source venvv/bin/activate
 
 # Trên Windows (PowerShell):
-# venv\Scripts\activate
+# venvv\Scripts\activate
 ```
 
 ### 3. Cài đặt dependencies
@@ -52,30 +52,10 @@ python lock_simu_101.py
 ## 🔧 Cấu hình
 
 ### MQTT Broker Settings
-Các file simulator sử dụng MQTT broker mặc định:
-- **Host**: `localhost` hoặc `test.mosquitto.org`
+Các file simulator sử dụng MQTT broker thingsboard:
+- **Host**: `thingsboardhost` 
 - **Port**: `1883`
-- **Topics**: 
-  - Gateway: `gateway/status`
-  - Lock: `lock/status`
 
-### Virtual Environment Auto-activation (Optional)
-Để tự động kích hoạt venv mỗi khi vào thư mục, thêm vào `~/.bashrc`:
-```bash
-# Auto activate venv for GW_SIMU
-cd() {
-    builtin cd "$@"
-    if [[ -d "venv" ]] && [[ -z "$VIRTUAL_ENV" ]]; then
-        source venv/bin/activate
-    fi
-}
-```
-
-Hoặc tạo alias:
-```bash
-echo 'alias gw_simu="cd ~/Documents/GW_SIMU && source venv/bin/activate"' >> ~/.bashrc
-source ~/.bashrc
-```
 
 ## 📋 Requirements
 
