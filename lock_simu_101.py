@@ -3,14 +3,14 @@ import json
 import time
 
 # ==================== CẤU HÌNH ====================
-DEVICE_NAME = "LOCK_101"
+DEVICE_NAME = "LOCK_105"
 
 BROKERS = {
     "thingsboard": {
-        "host": "192.168.44.135", # tbcanopi
+        "host": "192.168.44.134", # tbcanopi
         #"host": "192.168.1.62", # tbgiang
         "port": 1883,
-        "access_token": "piyvZtE3DOLb6Wd7NEPe", # tbcanopi
+        "access_token": "FloStnQoRg9r15JB6jBS", # tbcanopi
         #"access_token": "658D830E657FE2305830B8AC9F8C6FBA", # tbgiang 
         "rpc_request_topic": "v1/devices/me/rpc/request/+",
         "telemetry_topic": "v1/devices/me/telemetry",
