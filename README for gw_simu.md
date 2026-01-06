@@ -31,13 +31,7 @@ BROKERS = {
 ### Virtual Devices
 ```python
 virtual_lock_devices = {
-    "LOCK_105": {
-        "name": "LOCK_105",
-        "state": "locked",
-        "battery": 85,
-        "rssi": -65,
-        "location": "Main Entrance"
-    }
+
 }
 ```
 
