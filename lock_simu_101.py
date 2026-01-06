@@ -6,6 +6,7 @@ import base64
 import re
 import socket
 from datetime import datetime
+import threading
 
 # ==================== CẤU HÌNH ====================
 DEVICE_NAME = "eedge/Canopi Gateway - Power Saver_00:FF:FF:FF:FF:FD"
@@ -92,6 +93,79 @@ def send_rpc_response(request_id, response):
         log_debug(f"✅ RPC Response → {topic} | Payload: {json.dumps(response)}")
     else:
         log_debug(f"❌ Lỗi gửi RPC response (rc={result.rc})", "ERROR")
+
+# ==================== HÀM GỬI LINK LOCK TELEMETRY ====================
+def send_link_lock_telemetry(tb_lock_id, lock_info):
+    """
+    Gửi telemetry link_lock sau khi link lock thành công
+    Delay 10 giây sau khi trả về RPC response
+    
+    Format:
+    {
+        "link_lock": {
+            "deviceId": "xxxx",  // Thingsboard gateway device ID
+            "event": "GATEWAY_CONNECTED_LOCK",
+            "ts": 1609459200000,  // Timestamp
+            "data": {
+                "lockId": "xxxx",  // Thingsboard lock device ID
+                "lockMac": "AA:BB:CC:DD:EE:FF",
+                "rssi": -89,  // signal strength
+                "error_code": 0,  // 0: success
+                "is_success": true  // infer from error_code
+            }
+        }
+    }
+    """
+    def send_after_delay():
+        """Gửi telemetry sau delay 10 giây"""
+        log_debug(f"⏳ Đang đợi 10 giây để gửi link_lock telemetry cho lock {tb_lock_id}...")
+        time.sleep(10)
+        
+        # Tạo RSSI ngẫu nhiên (giả lập signal strength)
+        rssi = random.randint(-95, -60)  # -95 đến -60 dBm
+        
+        # Tạo telemetry link_lock
+        link_lock_data = {
+            "deviceId": DEVICE_NAME,  # Gateway device ID
+            "event": "GATEWAY_CONNECTED_LOCK",
+            "ts": int(time.time() * 1000),  # Current timestamp in milliseconds
+            "data": {
+                "lockId": tb_lock_id,
+                "lockMac": lock_info["lockMac"],
+                "rssi": rssi,
+                "error_code": 0,  # Success
+                "is_success": True
+            }
+        }
+        
+        # Tạo payload telemetry
+        telemetry_payload = {
+            "link_lock": link_lock_data
+        }
+        
+        # Gửi telemetry
+        publish_telemetry(telemetry_payload)
+        
+        log_debug(f"📡 Đã gửi link_lock telemetry:")
+        log_debug(f"   • Lock ID: {tb_lock_id}")
+        log_debug(f"   • Lock MAC: {lock_info['lockMac']}")
+        log_debug(f"   • RSSI: {rssi} dBm")
+        log_debug(f"   • Event: GATEWAY_CONNECTED_LOCK")
+        log_debug(f"   • Timestamp: {link_lock_data['ts']}")
+        
+        # Cập nhật lastSeen trong lock info
+        if tb_lock_id in linked_locks:
+            linked_locks[tb_lock_id]["lastSeen"] = int(time.time() * 1000)
+            linked_locks[tb_lock_id]["lastRSSI"] = rssi
+            linked_locks[tb_lock_id]["connectionStatus"] = "connected"
+            
+            log_debug(f"✅ Đã cập nhật connection status cho lock {tb_lock_id}")
+    
+    # Chạy trong thread riêng để không block main thread
+    thread = threading.Thread(target=send_after_delay, daemon=True)
+    thread.start()
+    
+    log_debug(f"🔄 Đã khởi động thread gửi link_lock telemetry sau 10 giây")
 
 # ==================== SIMULATE GATEWAY TELEMETRY ====================
 def simulate_gateway_telemetry():
@@ -244,13 +318,14 @@ def handle_link_lock(params):
         "bleSessionToken": ble_session_token,
         "tbLockName": tb_lock_name,
         "linkedAt": int(time.time() * 1000),
-        "status": "linked",
-        "lastSeen": int(time.time() * 1000)
+        "status": "linking",  # Trạng thái đang kết nối
+        "lastSeen": int(time.time() * 1000),
+        "connectionStatus": "connecting"
     }
     
     linked_locks[tb_lock_id] = lock_info
     
-    log_debug(f"✅ Đã link lock thành công:")
+    log_debug(f"✅ Đã nhận link lock request thành công:")
     log_debug(f"   • TB Lock ID: {tb_lock_id}")
     log_debug(f"   • TB Lock Name: {tb_lock_name}")
     log_debug(f"   • LMS Lock ID: {lms_lock_id}")
@@ -271,7 +346,10 @@ def handle_link_lock(params):
     # Gửi attributes cập nhật danh sách lock
     update_locks_attributes()
     
-    log_debug(f"📝 Lock device {tb_lock_name} đã được lưu thông tin")
+    log_debug(f"📝 Lock device {tb_lock_name} đang được xử lý...")
+    
+    # 🔥 THÊM: Khởi động thread để gửi link_lock telemetry sau 10 giây
+    send_link_lock_telemetry(tb_lock_id, lock_info)
     
     # Trả về response theo format yêu cầu
     return {"code": 0}
@@ -396,6 +474,10 @@ def handle_get_link_locks(params):
             lock_data["status"] = lock_info["status"]
         if "lastSeen" in lock_info:
             lock_data["lastSeen"] = lock_info["lastSeen"]
+        if "connectionStatus" in lock_info:
+            lock_data["connectionStatus"] = lock_info["connectionStatus"]
+        if "lastRSSI" in lock_info:
+            lock_data["lastRSSI"] = lock_info["lastRSSI"]
         
         locks_list.append(lock_data)
     
@@ -411,7 +493,9 @@ def handle_get_link_locks(params):
     if locks_list:
         log_debug(f"📋 Chi tiết locks:")
         for i, lock in enumerate(locks_list, 1):
-            log_debug(f"   {i}. {lock['tbLockName']} ({lock['tbLockId']}) - {lock['lockMac']}")
+            status = lock.get('connectionStatus', 'unknown')
+            rssi = lock.get('lastRSSI', 'N/A')
+            log_debug(f"   {i}. {lock['tbLockName']} ({lock['tbLockId']}) - {lock['lockMac']} - Status: {status}, RSSI: {rssi}")
     else:
         log_debug(f"📭 Không có lock nào được link")
     
@@ -495,9 +579,11 @@ def simulate_incoming_rpc():
     mock_msg = MockMsg(test_topic, test_rpc_linklock)
     on_message(client, None, mock_msg)
     
-    # Đợi 1 giây rồi test getLinkLocks
-    time.sleep(1)
+    # Đợi 12 giây để thấy link_lock telemetry được gửi (10s + buffer)
+    log_debug(f"⏳ Đợi 12 giây để xem link_lock telemetry được gửi...")
+    time.sleep(12)
     
+    # Test getLinkLocks
     mock_msg2 = MockMsg(f"v1/devices/me/rpc/request/{int(time.time())}", test_rpc_getlinklocks)
     on_message(client, None, mock_msg2)
     
@@ -738,7 +824,9 @@ if __name__ == "__main__":
         if linked_locks:
             log_debug(f"🔗 Danh sách lock đã link:")
             for lock_id, lock_info in linked_locks.items():
-                log_debug(f"  • {lock_info['tbLockName']} ({lock_id}) - {lock_info['lockMac']}")
+                status = lock_info.get('connectionStatus', 'unknown')
+                rssi = lock_info.get('lastRSSI', 'N/A')
+                log_debug(f"  • {lock_info['tbLockName']} ({lock_id}) - {lock_info['lockMac']} - Status: {status}, RSSI: {rssi}")
         
         # Gửi disconnect status
         try:
